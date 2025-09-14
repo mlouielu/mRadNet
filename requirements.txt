@@ -1,0 +1,8 @@
+cruw-devkit @ git+https://github.com/yizhou-wang/cruw-devkit.git
+numpy
+pyyaml
+tensorboard
+timm
+torch
+torchvision
+tqdm
