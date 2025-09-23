@@ -1,11 +1,14 @@
 # mRadNet: A Compact Radar Object Detector with MetaFormer
-This is the official implementation of mRadNet from the paper mRadNet: A Compact Radar Object Detector with MetaFormer.
+
+[![arXiv](https://img.shields.io/badge/arXiv-2509.16223-b31b1b.svg)](https://arxiv.org/abs/2509.16223)
+
+This is the official implementation of mRadNet from the paper [mRadNet: A Compact Radar Object Detector with MetaFormer](https://arxiv.org/abs/2509.16223).
 
 ![mRadNet's archetecture](assets/architecture.png)
 
 ## Data Preparation
 * Download the CRUW ROD2021 dataset from https://www.cruwdataset.org/download. Download `TRAIN_RAD_H.zip` and `TRAIN_RAD_H_ANNO.zip`, the camera images and the testing set are not needed. Extract the zip files, and place the files as the following structure:
-```js
+```cpp
 ├─ annotations
 |  ├─ test                      // 4 sequences - TRAIN_RAD_H_ANNO.zip
 |  |  ├─ 2019_04_09_BMS1001.txt
