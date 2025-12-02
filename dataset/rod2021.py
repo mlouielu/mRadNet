@@ -1,10 +1,10 @@
 import os
+import pathlib
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
-
 from utils.confmap import encode_confmaps
 
 
@@ -30,44 +30,56 @@ class ROD2021Dataset(Dataset):
         bar = tqdm(total=len(seqs), dynamic_ncols=True)
 
         for seq in seqs:
-
             # find all frames, read RAD data
             bar.set_description(f"Reading radar data for {seq}")
+
             self.rads[seq] = {}
-            try:
-                files = list(os.listdir(os.path.join(seq_path, seq, "RADAR_RA_H")))
-            except:
-                continue
-            frames = sorted(list(set([int(f.split("_")[0]) for f in files])))
-            for frame in frames:
-                num_chirps = len(dataset_cfg["chirps"])
-                self.rads[seq][frame] = torch.zeros(
-                    (
-                        num_chirps,
-                        dataset_cfg["input_size"][0],
-                        dataset_cfg["input_size"][1],
-                        2,
+            self.annos[seq] = {}
+
+            seq_dir = pathlib.Path(os.path.join(seq_path, seq))
+            seq_npy = seq_dir / "RADAR_RA_H.npy"
+            if seq_npy.exists():
+                frames = np.load(seq_npy)  # shape (num_frames, num_chirps, R, A, 2)
+                for frame_idx in range(frames.shape[0]):
+                    self.rads[seq][frame_idx] = torch.from_numpy(frames[frame_idx])
+                    self.annos[seq][frame_idx] = []
+            else:
+                try:
+                    files = list(os.listdir(os.path.join(seq_path, seq, "RADAR_RA_H")))
+                except:
+                    continue
+                frames = sorted(list(set([int(f.split("_")[0]) for f in files])))
+                for frame in frames:
+                    self.annos[seq][frame] = []
+                for frame in frames:
+                    num_chirps = len(dataset_cfg["chirps"])
+                    self.rads[seq][frame] = torch.zeros(
+                        (
+                            num_chirps,
+                            dataset_cfg["input_size"][0],
+                            dataset_cfg["input_size"][1],
+                            2,
+                        )
                     )
-                )
-                for i, chirp in enumerate(dataset_cfg["chirps"]):
-                    radar_name = os.path.join(
-                        seq_path, seq, "RADAR_RA_H", f"{frame:06d}_{chirp:04d}" + ".npy"
-                    )
-                    ra = torch.from_numpy(np.load(radar_name))  # [128, 128, 2]
-                    self.rads[seq][frame][i, :, :, :] = ra
-                    # [1, 128, 128, 2] or [4, 128, 128, 2]
+                    for i, chirp in enumerate(dataset_cfg["chirps"]):
+                        radar_name = os.path.join(
+                            seq_path,
+                            seq,
+                            "RADAR_RA_H",
+                            f"{frame:06d}_{chirp:04d}" + ".npy",
+                        )
+                        ra = torch.from_numpy(np.load(radar_name))  # [128, 128, 2]
+                        self.rads[seq][frame][i, :, :, :] = ra
+                        # [1, 128, 128, 2] or [4, 128, 128, 2]
 
             # read annotations
             bar.set_description(f"Reading annotation for {seq}")
-            self.annos[seq] = {}
             anno_path = os.path.join(
                 self.root_dir,
                 "annotations",
                 "train" if training else "test",
                 f"{seq}.txt",
             )
-            for frame in frames:
-                self.annos[seq][frame] = []
             with open(anno_path, "r") as f:
                 data = f.readlines()
             for line in data:
