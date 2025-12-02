@@ -29,9 +29,11 @@ def train(config: dict, resume: str, device_name: str):
     random.seed(config["seed"])
     np.random.seed(config["seed"])
     torch.manual_seed(config["seed"])
-    torch.backends.cudnn.benchmark = True # Changed to True for speed
-    torch.backends.cudnn.deterministic = False # Changed to False for speed
-    torch.use_deterministic_algorithms(False, warn_only=True) # Changed to False for speed
+    torch.backends.cudnn.benchmark = True  # Changed to True for speed
+    torch.backends.cudnn.deterministic = False  # Changed to False for speed
+    torch.use_deterministic_algorithms(
+        False, warn_only=True
+    )  # Changed to False for speed
 
     device = torch.device(device_name)
 
@@ -60,6 +62,8 @@ def train(config: dict, resume: str, device_name: str):
         training=False,
         root_path=config["dataset"]["root_path"],
     )
+
+    print("TOTAL CLIPS: ", len(train_set.window_start_list))
     train_loader = DataLoader(
         train_set,
         batch_size=config["train"]["batch_size"],
@@ -99,15 +103,15 @@ def train(config: dict, resume: str, device_name: str):
     loss_fn = nn.SmoothL1Loss().to(device)
 
     # Initialize GradScaler for AMP
-    scaler = torch.amp.grad_scaler.GradScaler('cuda')
+    scaler = torch.amp.grad_scaler.GradScaler("cuda")
 
     # Resume training
     if resume:
         checkpoint = torch.load(resume)
         start_epoch = checkpoint["epoch"]
         model.load_state_dict(checkpoint["model_state_dict"])
-        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        # optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        # scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         if "scaler_state_dict" in checkpoint:
             scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resuming training from epoch {start_epoch}")
@@ -154,14 +158,37 @@ def train(config: dict, resume: str, device_name: str):
             with torch.autocast(device_type="cuda", dtype=torch.float16):
                 outputs = model(inputs)
                 loss = loss_fn(outputs["output"], confmap)
-            
+
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
 
             bar.update(1)
             writer.add_scalar("train/loss", loss.item(), epoch * len(train_loader) + i)
+            print("train/loss", loss.item(), epoch * len(train_loader) + i)
         bar.close()
+
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),  # Corrected for timm.optim
+                "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+            },
+            os.path.join(exp_dir, "checkpoint_latest.pt"),
+        )
+        torch.save(
+            {
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),  # Corrected for timm.optim
+                "scheduler_state_dict": scheduler.state_dict(),
+                "scaler_state_dict": scaler.state_dict(),
+            },
+            os.path.join(exp_dir, f"checkpoint_epoch_{epoch+1:02d}.pt"),
+        )
+        continue
 
         # Validation
         bar = tqdm(
