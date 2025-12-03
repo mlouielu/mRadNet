@@ -10,7 +10,12 @@ from utils.confmap import encode_confmaps
 
 class ROD2021Dataset(Dataset):
     def __init__(
-        self, dataset_cfg: dict, model_cfg: dict, training: bool, root_path: str
+        self,
+        dataset_cfg: dict,
+        model_cfg: dict,
+        training: bool,
+        root_path: str,
+        scaling=1.0,
     ):
         super().__init__()
         self.root_dir = root_path
@@ -41,7 +46,9 @@ class ROD2021Dataset(Dataset):
             if seq_npy.exists():
                 frames = np.load(seq_npy)  # shape (num_frames, num_chirps, R, A, 2)
                 for frame_idx in range(frames.shape[0]):
-                    self.rads[seq][frame_idx] = torch.from_numpy(frames[frame_idx])
+                    self.rads[seq][frame_idx] = (
+                        torch.from_numpy(frames[frame_idx]) * scaling
+                    )
                     self.annos[seq][frame_idx] = []
             else:
                 try:
@@ -69,7 +76,7 @@ class ROD2021Dataset(Dataset):
                             f"{frame:06d}_{chirp:04d}" + ".npy",
                         )
                         ra = torch.from_numpy(np.load(radar_name))  # [128, 128, 2]
-                        self.rads[seq][frame][i, :, :, :] = ra
+                        self.rads[seq][frame][i, :, :, :] = ra * scaling
                         # [1, 128, 128, 2] or [4, 128, 128, 2]
 
             # read annotations
