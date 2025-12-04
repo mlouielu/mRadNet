@@ -15,14 +15,17 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard.writer import SummaryWriter
 from tqdm import tqdm
 
-from dataset.rod2021 import ROD2021Dataset, collate_fn, data_augment
-from utils.confmap import decode_confmap
-from utils.evaluate import evaluate_ols
+from mradnet.dataset.rod2021 import ROD2021Dataset, collate_fn, data_augment
+from mradnet.utils.confmap import decode_confmap
+from mradnet.utils.evaluate import evaluate_ols
 
 # https://docs.pytorch.org/docs/stable/generated/torch.use_deterministic_algorithms.html
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
+from line_profiler import profile
 
+
+@profile
 def train(config: dict, resume: str, device_name: str):
 
     # https://docs.pytorch.org/docs/stable/notes/randomness.html
@@ -39,7 +42,7 @@ def train(config: dict, resume: str, device_name: str):
 
     # Initialize model
     if config["name"] == "mRadNet":
-        from model.mRadNet import mRadNet
+        from mradnet.model.mRadNet import mRadNet
 
         model = mRadNet(model_cfg=config["model"], dataset_cfg=config["dataset"]).to(
             device
@@ -91,9 +94,17 @@ def train(config: dict, resume: str, device_name: str):
 
     num_epochs = config["train"]["num_epochs"]
 
+    FREEZE = True
+    if FREEZE:
+        print("Freezing encoder parameters...")
+        for param in model.encoder.parameters():
+            param.requires_grad = False
+
+    trainable_params = [p for p in model.parameters() if p.requires_grad]
+
     # Initialize optimizer
     optimizer = timm.optim.adamp.AdamP(
-        model.parameters(), lr=config["train"]["learning_rate"]
+        trainable_params, lr=config["train"]["learning_rate"]
     )
     scheduler = timm.scheduler.cosine_lr.CosineLRScheduler(
         optimizer,
@@ -102,9 +113,6 @@ def train(config: dict, resume: str, device_name: str):
 
     loss_fn = nn.SmoothL1Loss().to(device)
 
-    # Initialize GradScaler for AMP
-    scaler = torch.amp.grad_scaler.GradScaler("cuda")
-
     # Resume training
     if resume:
         checkpoint = torch.load(resume)
@@ -112,8 +120,6 @@ def train(config: dict, resume: str, device_name: str):
         model.load_state_dict(checkpoint["model_state_dict"])
         # optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         # scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
-        if "scaler_state_dict" in checkpoint:
-            scaler.load_state_dict(checkpoint["scaler_state_dict"])
         print(f"Resuming training from epoch {start_epoch}")
     else:
         start_epoch = 0
@@ -129,7 +135,7 @@ def train(config: dict, resume: str, device_name: str):
         os.makedirs(exp_dir)
     with open(os.path.join(exp_dir, "config.yaml"), "w") as f:
         yaml.dump(config, f)
-    shutil.copyfile(f"model/{config['name']}.py", os.path.join(exp_dir, "model.py"))
+    shutil.copyfile(f"src/mradnet/model/{config['name']}.py", os.path.join(exp_dir, "model.py"))
     shutil.copyfile(f"train.py", os.path.join(exp_dir, "train.py"))
 
     # Initialize Tensorboard
@@ -155,13 +161,12 @@ def train(config: dict, resume: str, device_name: str):
 
             # Forward pass with AMP
             optimizer.zero_grad()
-            with torch.autocast(device_type="cuda", dtype=torch.float16):
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 outputs = model(inputs)
                 loss = loss_fn(outputs["output"], confmap)
 
-            scaler.scale(loss).backward()
-            scaler.step(optimizer)
-            scaler.update()
+            loss.backward()
+            optimizer.step()
 
             bar.update(1)
             writer.add_scalar("train/loss", loss.item(), epoch * len(train_loader) + i)
@@ -174,7 +179,6 @@ def train(config: dict, resume: str, device_name: str):
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),  # Corrected for timm.optim
                 "scheduler_state_dict": scheduler.state_dict(),
-                "scaler_state_dict": scaler.state_dict(),
             },
             os.path.join(exp_dir, "checkpoint_latest.pt"),
         )
@@ -184,7 +188,6 @@ def train(config: dict, resume: str, device_name: str):
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),  # Corrected for timm.optim
                 "scheduler_state_dict": scheduler.state_dict(),
-                "scaler_state_dict": scaler.state_dict(),
             },
             os.path.join(exp_dir, f"checkpoint_epoch_{epoch+1:02d}.pt"),
         )
@@ -209,7 +212,7 @@ def train(config: dict, resume: str, device_name: str):
                 confmap = data["confmap"].to(device)  # [1, T, R, A, classes]
 
                 # Forward pass
-                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                with torch.autocast(device_type="cuda", dtype=btorch.float16):
                     outputs = model(inputs)
                     loss = loss_fn(outputs["output"], confmap)
                 losses.append(loss.item())

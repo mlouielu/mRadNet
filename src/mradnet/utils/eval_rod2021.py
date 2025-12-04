@@ -86,4 +86,5 @@ def evaluate_rod2021(
 
     eval = accumulate(evalImgs_all, n_frames_all, olsThrs, recThrs, dataset, log=False)
     stats = summarize(eval, olsThrs, recThrs, dataset, gl=False)
+    print(stats)
     return stats[0], stats[1]  # AP, AR

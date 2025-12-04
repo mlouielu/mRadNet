@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
-from utils.confmap import encode_confmaps
+from mradnet.utils.confmap import encode_confmaps
 
 
 class ROD2021Dataset(Dataset):
@@ -33,6 +33,9 @@ class ROD2021Dataset(Dataset):
         self.confmaps: dict[str, dict[int, torch.Tensor]] = {}
         seqs = sorted(os.listdir(seq_path))
         bar = tqdm(total=len(seqs), dynamic_ncols=True)
+        print(seqs)
+        print(os.listdir(seq_path))
+        print(seq_path)
 
         for seq in seqs:
             # find all frames, read RAD data

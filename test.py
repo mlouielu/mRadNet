@@ -9,9 +9,11 @@ from cruw import CRUW
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from dataset.rod2021 import ROD2021Dataset, collate_fn
-from utils.confmap import decode_confmap
-from utils.evaluate import evaluate_ols
+from mradnet.dataset.rod2021 import ROD2021Dataset, collate_fn
+from mradnet.utils.confmap import decode_confmap
+from mradnet.utils.evaluate import evaluate_ols
+
+import matplotlib.pyplot as plt
 
 # https://docs.pytorch.org/docs/stable/generated/torch.use_deterministic_algorithms.html
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
@@ -59,7 +61,7 @@ def test(config: dict, resume: str, device_name: str):
 
     # Initialize model
     if config["name"] == "mRadNet":
-        from model.mRadNet import mRadNet
+        from mradnet.model.mRadNet import mRadNet
 
         model = mRadNet(model_cfg=config["model"], dataset_cfg=config["dataset"]).to(
             device
@@ -95,6 +97,9 @@ def test(config: dict, resume: str, device_name: str):
                 predictions[seq][frame] = decode_confmap(
                     confmap, config["dataset"], config["model"]
                 )
+                if j == 5:
+                    print(predictions[seq][frame])
+
     bar.close()
 
     AP, AR = evaluate_ols(dataset_helper, predictions, config)

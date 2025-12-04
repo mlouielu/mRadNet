@@ -73,6 +73,7 @@ def decode_confmap(confmap: torch.Tensor, dataset_cfg: dict, model_cfg: dict, nm
                         class_idx, np.clip(class_conf[i, j], 0, 1))
                        for i, j in find_3x3_peaks(class_conf)
                        if class_conf[i, j] > confmap_cfg['conf_threshold']]
+
         peaks.extend(
             l_nms(class_peaks, class_sizes[class_idx],
                   confmap_cfg['lnms_threshold'])
