@@ -150,12 +150,16 @@ class mRadNetEncoder(nn.Module):
         in_channels: int,
         patch_size: list[int],
         depths: list[int],
-        dims: list[int]
+        dims: list[int],
+        drop_path_rates: list[float] = None
     ):
         super().__init__()
         self.depths = depths
         self.dims = dims
         self.num_stages = len(depths)
+
+        if drop_path_rates is None:
+            drop_path_rates = [0.0] * sum(depths)
 
         self.input = TokenEmbed(
             patch_size, in_channels=in_channels,
@@ -164,8 +168,10 @@ class mRadNetEncoder(nn.Module):
 
         token_mixers = [SepConv] * 2 + [Attention] * 2
 
+        cur = 0
         self.stages = nn.ModuleList()
         for i in range(self.num_stages):
+            stage_dpr = drop_path_rates[cur:cur + depths[i]]
             self.stages.append(
                 nn.Sequential(*[
                     MetaFormerBlock(
@@ -173,10 +179,13 @@ class mRadNetEncoder(nn.Module):
                         token_mixer=token_mixers[i],
                         norm_layer=nn.LayerNorm,
                         proj_drop=0.1,
+                        drop_path=stage_dpr[j],
                         use_nchw=False)
-                    for _ in range(depths[i])
+                    for j in range(depths[i])
                 ])
             )
+
+            cur += depths[i]
 
         self.downsamples = nn.ModuleList()
         for i in range(self.num_stages - 1):
@@ -207,10 +216,14 @@ class mRadNetDecoder(nn.Module):
         depths: list[int],
         embed_dim: int,
         out_channels: int,
-        patch_size: list[int]
+        patch_size: list[int],
+        drop_path_rates: list[float] = None
     ):
         super().__init__()
         num_stages = len(depths)
+
+        if drop_path_rates is None:
+            drop_path_rates = [0.0] * sum(depths)
 
         self.expands = nn.ModuleList()
         for i in range(num_stages):
@@ -225,8 +238,11 @@ class mRadNetDecoder(nn.Module):
 
         token_mixers = [Attention] * 1 + [SepConv] * 2
 
+        cur = 0
         self.stages = nn.ModuleList()
         for i in range(num_stages):
+            stage_dpr = drop_path_rates[cur:cur + depths[i]]
+
             self.stages.append(
                 nn.Sequential(*[
                     MetaFormerBlock(
@@ -234,10 +250,13 @@ class mRadNetDecoder(nn.Module):
                         token_mixer=token_mixers[i],
                         norm_layer=nn.LayerNorm,
                         proj_drop=0.1,
+                        drop_path=stage_dpr[j],
                         use_nchw=False)
-                    for _ in range(depths[i])
+                    for j in range(depths[i])
                 ])
             )
+
+            cur += depths[i]
 
         self.linears = nn.ModuleList()
         for i in range(num_stages + 1):
@@ -280,6 +299,15 @@ class mRadNet(nn.Module):
         encoder_cfg = model_cfg['encoder']
         decoder_cfg = model_cfg['decoder']
         num_chirps = len(dataset_cfg['chirps'])  # 4
+        drop_path_rate = model_cfg.get('drop_path_rate', 0.0)
+
+        enc_depths = encoder_cfg['depths']
+        dec_depths = decoder_cfg['depths']
+        total_depth = sum(enc_depths) + sum(dec_depths)
+        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, total_depth)]
+
+        enc_dpr = dpr[:sum(enc_depths)]
+        dec_dpr = dpr[sum(enc_depths):]
 
         self.stem = nn.Conv3d(
             2, 2 * num_chirps, (num_chirps, 1, 1),
@@ -290,14 +318,16 @@ class mRadNet(nn.Module):
             in_channels=2 * num_chirps,
             patch_size=encoder_cfg['patch_size'],
             depths=encoder_cfg['depths'],
-            dims=encoder_cfg['dims']
+            dims=encoder_cfg['dims'],
+            drop_path_rates=enc_dpr,
         )
         self.decoder = mRadNetDecoder(
             in_channels=encoder_cfg['dims'],
             depths=decoder_cfg['depths'],
             embed_dim=decoder_cfg['embed_dim'],
             out_channels=len(dataset_cfg['class_names']),
-            patch_size=encoder_cfg['patch_size']
+            patch_size=encoder_cfg['patch_size'],
+            drop_path_rates=dec_dpr,
         )
 
     def forward(self, x: torch.Tensor) -> dict[str, torch.Tensor]:
